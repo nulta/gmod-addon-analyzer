@@ -8,29 +8,94 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GmodAddonAnalyzer.Pages;
 
-public sealed class AdminModel(IDbContextFactory<AnalyzerDbContext> dbFactory, AnalyzerOptions options, CleanupService cleanup) : PageModel
+public sealed class AdminModel(IDbContextFactory<AnalyzerDbContext> dbFactory, AnalyzerOptions options,
+    CleanupService cleanup, AdminGuardService guard) : PageModel
 {
     public int TtlDays { get; } = options.CleanupTtlDays;
     public List<Addon> Addons { get; private set; } = [];
 
-    public async Task OnGetAsync()
+    public bool NeedsLogin { get; private set; }
+    public bool IsLockedOut { get; private set; }
+    public DateTime LockoutUntil { get; private set; }
+    public string? LoginError { get; private set; }
+
+    public async Task<IActionResult> OnGetAsync()
     {
+        if (!guard.IsConfigured)
+        {
+            NeedsLogin = true;
+            LoginError = "Admin password is not configured. Set Analyzer:AdminPassword.";
+            return Page();
+        }
+
+        if (!IsAuthorized())
+        {
+            NeedsLogin = true;
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+            if (guard.IsLockedOut(ip, out var until))
+            {
+                IsLockedOut = true;
+                LockoutUntil = until;
+            }
+            return Page();
+        }
+
         await using var db = await dbFactory.CreateDbContextAsync();
         Addons = await db.Addons
             .OrderByDescending(a => a.LastFetchedAt)
             .Take(200)
             .ToListAsync();
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostLoginAsync(string password)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "";
+        if (guard.IsLockedOut(ip, out var until))
+        {
+            IsLockedOut = true;
+            LockoutUntil = until;
+            LoginError = "Too many attempts. Try again later.";
+            NeedsLogin = true;
+            return Page();
+        }
+        if (!guard.IsConfigured)
+        {
+            LoginError = "Admin password is not configured. Set Analyzer:AdminPassword.";
+            NeedsLogin = true;
+            return Page();
+        }
+        if (guard.TryLogin(password ?? "", ip))
+        {
+            Response.Cookies.Append(AdminGuardService.CookieName, AdminGuardService.CookieValue,
+                new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, MaxAge = TimeSpan.FromHours(12) });
+            return RedirectToPage();
+        }
+        LoginError = "Incorrect password.";
+        NeedsLogin = true;
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostLogoutAsync()
+    {
+        Response.Cookies.Delete(AdminGuardService.CookieName);
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(long id)
     {
+        if (!IsAuthorized()) return Forbid();
         await cleanup.DeleteArtifactsForAsync(id);
         return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostSweepAsync()
     {
+        if (!IsAuthorized()) return Forbid();
         await cleanup.SweepAsync();
         return RedirectToPage();
     }
+
+    private bool IsAuthorized() =>
+        guard.IsConfigured && Request.Cookies[AdminGuardService.CookieName] == AdminGuardService.CookieValue;
 }

@@ -18,9 +18,19 @@
         status.className = "muted " + (cls || "");
     }
 
+    function parseAddonId(raw) {
+        if (!raw) return null;
+        const trimmed = raw.trim();
+        if (!trimmed) return null;
+        const m = trimmed.match(/(?:[?&]id=|^)(\d{2,})/);
+        if (m) return parseInt(m[1], 10);
+        const n = parseInt(trimmed, 10);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
     async function ensureChallenge() {
-        const id = parseInt(input.value, 10);
-        if (!Number.isFinite(id) || id <= 0) {
+        const id = parseAddonId(input.value);
+        if (id === null) {
             btn.disabled = true;
             setStatus("");
             return;
@@ -77,28 +87,32 @@
 
     async function submit(challenge, nonce) {
         const body = JSON.stringify({ addonId: challenge.addonId, seed: challenge.seed, nonce: nonce });
-        const r = await fetch("/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: body,
-            redirect: "manual",
-        });
-        if (r.type === "opaqueredirect" || (r.status >= 300 && r.status < 400)) {
-            const loc = r.headers.get("Location");
-            if (loc) { window.location.href = loc; return; }
+        let r;
+        try {
+            r = await fetch("/analyze", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: body,
+                redirect: "follow",
+            });
+        } catch (e) {
+            setStatus("Network error: " + e.message, "danger");
+            btn.disabled = false;
+            return;
         }
-        if (r.ok) {
-            const loc = r.headers.get("Location");
-            if (loc) { window.location.href = loc; return; }
-            window.location.href = `/report/${challenge.addonId}`;
+        // With redirect:"follow", a 302 → 200 landing on /report/{id} is the final response.
+        // The browser navigated there automatically only for top-level navigation; fetch does not navigate.
+        // So we read the final URL from r.url (the resolved location after following redirects).
+        if (r.ok || (r.status >= 300 && r.status < 400)) {
+            const finalUrl = r.url || `/report/${challenge.addonId}`;
+            setStatus("Redirecting…", "ok");
+            window.location.href = finalUrl;
             return;
         }
         if (r.status === 429) { setStatus("Rate limited. Wait a minute and try again.", "danger"); btn.disabled = false; return; }
-        let msg = "Submission failed.";
-        try { const j = await r.json(); if (j.error === "bad_proof") msg = "Proof rejected. Try again."; } catch {}
-        setStatus(msg, "danger");
-        pendingChallenge = null;
-        ensureChallenge();
+        if (r.status === 400) { setStatus("Proof rejected. Try again.", "danger"); pendingChallenge = null; ensureChallenge(); return; }
+        setStatus("Submission failed (HTTP " + r.status + ").", "danger");
+        btn.disabled = false;
     }
 })();
 

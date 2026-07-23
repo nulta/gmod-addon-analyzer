@@ -70,4 +70,29 @@ public sealed class SmokeTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(0, json.GetProperty("difficulty").GetInt32());
         Assert.Equal("disabled", json.GetProperty("seed").GetString());
     }
+
+    [Fact]
+    public async Task LuaTagsPage_ForUnknownAddon_ReturnsOk()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/luatags/123");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminPage_WhenNoPassword_ShowsNotConfiguredMessage()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/Admin");
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.Contains("not configured", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FileDownload_ForMissingPath_Returns404()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/api/file/123?path=nope.lua");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
 }

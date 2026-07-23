@@ -46,16 +46,25 @@ public sealed class ExtractService
         await ReadNullStringAsync(fs, ct);
         if (format >= 2) await ReadExactAsync(fs, 4, ct);
 
+        // File entry headers (filenum, name, size, crc) come first, all contiguous.
+        // The bodies follow after a filenum=0 terminator. (Per Facepunch/gmad AddonReader.)
+        var entries = new List<(string Name, long Size)>();
         while (true)
         {
             var fileNum = BitConverter.ToUInt32(await ReadExactAsync(fs, 4, ct), 0);
             if (fileNum == 0) break;
             var name = await ReadNullStringAsync(fs, ct);
             var size = BitConverter.ToInt64(await ReadExactAsync(fs, 8, ct), 0);
-            await ReadExactAsync(fs, 4, ct);
+            await ReadExactAsync(fs, 4, ct); // crc
             _logger.LogInformation("GMA entry #{Num} name='{Name}' size={Size}", fileNum, name, size);
             if (string.IsNullOrEmpty(name))
                 throw new ExtractException($"GMA entry #{fileNum} had empty name");
+            entries.Add((name, size));
+        }
+
+        // Now the file bodies are contiguous starting at the current position.
+        foreach (var (name, size) in entries)
+        {
             var outPath = Path.Combine(destDir, name.Replace('/', Path.DirectorySeparatorChar));
             var outDir = Path.GetDirectoryName(outPath);
             if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);

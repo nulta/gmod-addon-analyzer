@@ -15,4 +15,8 @@ public sealed class AnalyzerOptions
 
     public int CleanupTtlDays { get; set; } = 5;
     public int CleanupIntervalHours { get; set; } = 6;
+
+    public string AdminPassword { get; set; } = string.Empty;
+    public int AdminMaxAttempts { get; set; } = 5;
+    public int AdminLockoutMinutes { get; set; } = 15;
 }

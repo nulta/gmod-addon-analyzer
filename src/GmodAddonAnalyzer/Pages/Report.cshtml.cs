@@ -22,10 +22,7 @@ public sealed class ReportModel(IDbContextFactory<AnalyzerDbContext> dbFactory) 
 
         Run = run is not null
             ? await db.AnalysisRuns.FirstOrDefaultAsync(r => r.Id == run)
-            : await db.AnalysisRuns
-                .Where(r => r.Addon != null && r.Addon.WorkshopId == id)
-                .OrderByDescending(r => r.SubmittedAt)
-                .FirstOrDefaultAsync();
+            : null;
 
         if (Run is null)
             Run = await db.AnalysisRuns

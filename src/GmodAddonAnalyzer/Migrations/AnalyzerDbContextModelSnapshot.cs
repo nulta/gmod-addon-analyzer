@@ -207,17 +207,6 @@ namespace GmodAddonAnalyzer.Migrations
                     b.Navigation("Addon");
                 });
 
-            modelBuilder.Entity("GmodAddonAnalyzer.Data.Entities.AnalysisRun", b =>
-                {
-                    b.HasOne("GmodAddonAnalyzer.Data.Entities.Addon", "Addon")
-                        .WithMany()
-                        .HasForeignKey("AddonId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Addon");
-                });
-
             modelBuilder.Entity("GmodAddonAnalyzer.Data.Entities.LuaAnalysis", b =>
                 {
                     b.HasOne("GmodAddonAnalyzer.Data.Entities.AddonFile", "AddonFile")

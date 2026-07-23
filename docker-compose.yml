@@ -1,0 +1,19 @@
+services:
+  analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5249:8080"
+    volumes:
+      - data:/app/data
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Analyzer__PowDifficulty: "21"
+      Analyzer__CleanupTtlDays: "1"
+      Analyzer__CleanupIntervalHours: "6"
+      Analyzer__AdminPassword: ${ADMIN_PASSWORD:-}
+    restart: unless-stopped
+
+volumes:
+  data:

@@ -36,7 +36,7 @@ public sealed class ArtifactStore
     {
         var dir = PackedDir(addonId);
         if (!Directory.Exists(dir)) return null;
-        var files = Directory.GetFiles(dir);
+        var files = Directory.GetFiles(dir, "*", SearchOption.AllDirectories);
         return files.FirstOrDefault(f =>
             f.EndsWith(".gma", StringComparison.OrdinalIgnoreCase) ||
             f.EndsWith(".bin", StringComparison.OrdinalIgnoreCase) ||

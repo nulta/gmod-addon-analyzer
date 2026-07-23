@@ -1,21 +1,44 @@
 # Garry's Mod Addon Analyzer
 
-A modern, simple ASP.NET web application that fetches a Garry's Mod Steam Workshop addon via SteamCMD, extracts it, and analyzes its contents (files, sizes, Lua code structure, security heuristics).
+> [!warning]
+> **This project is entirely written using generative AI.** May contain serve issues or bugs. Use at your own risk.
 
-## Status
+A simple ASP.NET web application that fetches a Garry's Mod Steam Workshop addon via SteamCMD, extracts it, and analyzes its contents (files, sizes, Lua code structure, security heuristics).
 
-**Planning phase.** See [`docs/`](docs/) for the design.
+## Prerequisites
 
-## Documentation
+- .NET 10 SDK
+- SteamCMD -- optional. If not provided, it will be auto-installed.
 
-- [01 — Overview & Goals](docs/01-overview.md)
-- [02 — Architecture](docs/02-architecture.md)
-- [03 — Project Structure](docs/03-project-structure.md)
-- [04 — Data Model](docs/04-data-model.md)
-- [05 — Addon Pipeline (Fetch & Extract)](docs/05-addon-pipeline.md)
-- [06 — Addon Analysis](docs/06-addon-analysis.md)
-- [07 — Lua Analysis](docs/07-lua-analysis.md)
-- [08 — Web Features (Explorer, Viewer, Permalinks, History)](docs/08-web-features.md)
-- [09 — Maintenance & Anti-Spam](docs/09-maintenance-antispam.md)
-- [10 — Tech Choices & Conventions](docs/10-tech-conventions.md)
-- [11 — Roadmap / Milestones](docs/11-roadmap.md)
+## How to run
+
+```bash
+# 1. Build
+dotnet build
+
+# 2. Run (optionally point to your SteamCMD install + lower PoW difficulty for dev)
+dotnet run --project src/GmodAddonAnalyzer --launch-profile http
+```
+
+The app starts at `http://localhost:5249`.
+
+### Configuration
+
+All settings are optional and can be set via environment variables (`Analyzer__<Key>=value`) or `appsettings.json`:
+
+| Setting                | Default      | Description                                      |
+|------------------------|--------------|--------------------------------------------------|
+| `Analyzer:DataRoot`    | `./data`     | Where the SQLite DB, artifacts, logs, SteamCMD live |
+| `Analyzer:SteamCmdPath`| `null`       | Path to a folder containing `steamcmd.exe`. If null, auto-installs under `DataRoot/steamcmd` |
+| `Analyzer:PowDifficulty`| `16`        | SHA-256 leading-zero-bits required. Lower = easier (use `4` for dev) |
+| `Analyzer:PowEnabled`  | `true`       | Set `false` to skip proof-of-work entirely        |
+| `Analyzer:CleanupTtlDays`| `5`        | Extracted artifacts auto-removed after this many days |
+| `Analyzer:CleanupIntervalHours`| `6`  | How often the cleanup sweeper runs               |
+
+Example with environment variables:
+
+```bash
+Analyzer__SteamCmdPath=/path/to/steamcmd \
+Analyzer__PowDifficulty=4 \
+dotnet run --project src/GmodAddonAnalyzer --launch-profile http
+```

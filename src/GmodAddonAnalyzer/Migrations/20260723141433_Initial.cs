@@ -38,6 +38,24 @@ namespace GmodAddonAnalyzer.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "AnalysisRuns",
+                columns: table => new
+                {
+                    Id = table.Column<long>(type: "INTEGER", nullable: false)
+                        .Annotation("Sqlite:Autoincrement", true),
+                    AddonId = table.Column<long>(type: "INTEGER", nullable: false),
+                    SubmittedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
+                    Status = table.Column<int>(type: "INTEGER", nullable: false),
+                    ErrorMessage = table.Column<string>(type: "TEXT", nullable: true),
+                    SubmittedByIp = table.Column<string>(type: "TEXT", nullable: true),
+                    PowNonce = table.Column<long>(type: "INTEGER", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_AnalysisRuns", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "AddonFiles",
                 columns: table => new
                 {
@@ -58,30 +76,6 @@ namespace GmodAddonAnalyzer.Migrations
                         principalTable: "Addons",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AnalysisRuns",
-                columns: table => new
-                {
-                    Id = table.Column<long>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    AddonId = table.Column<long>(type: "INTEGER", nullable: false),
-                    SubmittedAt = table.Column<DateTime>(type: "TEXT", nullable: false),
-                    Status = table.Column<int>(type: "INTEGER", nullable: false),
-                    ErrorMessage = table.Column<string>(type: "TEXT", nullable: true),
-                    SubmittedByIp = table.Column<string>(type: "TEXT", nullable: true),
-                    PowNonce = table.Column<long>(type: "INTEGER", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AnalysisRuns", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_AnalysisRuns_Addons_AddonId",
-                        column: x => x.AddonId,
-                        principalTable: "Addons",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(

@@ -1,0 +1,51 @@
+@page "/luatags/{id:long}"
+@model GmodAddonAnalyzer.Pages.LuaTagsModel
+@using GmodAddonAnalyzer.Data.Entities
+@{
+    ViewData["Title"] = $"Lua tags — {Model.WorkshopId}";
+}
+
+<h1>Lua tags &mdash; <a asp-page="/Report" asp-route-id="@Model.WorkshopId">addon @Model.WorkshopId</a></h1>
+
+@if (Model.Entries.Count == 0)
+{
+    <p class="muted">No Lua files in this addon.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Path</th>
+                <th>Realm</th>
+                <th>Kind</th>
+                <th>Risk</th>
+                <th>Signals</th>
+                <th>Hooks declared</th>
+                <th>Hooks called</th>
+                <th>Timers</th>
+                <th>Net sent</th>
+                <th>Net rx</th>
+                <th>Lines</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var e in Model.Entries)
+        {
+            <tr>
+                <td><a asp-page="/Viewer" asp-route-id="@Model.WorkshopId" asp-route-path="@e.Path">@e.Path</a></td>
+                <td><span class="badge badge-@e.Realm">@e.Realm</span></td>
+                <td>@e.Kind</td>
+                <td><span class="badge badge-@e.RiskLevel">@e.RiskLevel</span></td>
+                <td>@(e.RiskSignals == "[]" ? "" : Html.Raw($"<code>{e.RiskSignals}</code>"))</td>
+                <td>@(e.HooksDeclared == "[]" ? "" : Html.Raw($"<code>{e.HooksDeclared}</code>"))</td>
+                <td>@(e.HooksCalled == "[]" ? "" : Html.Raw($"<code>{e.HooksCalled}</code>"))</td>
+                <td>@(e.TimersCreated == 0 ? "" : e.TimersCreated)</td>
+                <td>@(e.NetMessagesSent == "[]" ? "" : Html.Raw($"<code>{e.NetMessagesSent}</code>"))</td>
+                <td>@(e.NetReceivers == 0 ? "" : e.NetReceivers)</td>
+                <td>@e.Lines</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}

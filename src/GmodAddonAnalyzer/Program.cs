@@ -16,6 +16,7 @@ builder.Services.AddRateLimiter(o =>
 {
     o.AddFixedWindowLimiter("pow", w => { w.Window = TimeSpan.FromMinutes(1); w.PermitLimit = 10; });
     o.AddFixedWindowLimiter("analyze", w => { w.Window = TimeSpan.FromMinutes(1); w.PermitLimit = 5; });
+    o.AddFixedWindowLimiter("admin", w => { w.Window = TimeSpan.FromMinutes(1); w.PermitLimit = 10; });
 });
 
 builder.Services.AddHttpClient("workshop");
@@ -40,6 +41,7 @@ builder.Services.AddSingleton<AddonAnalyzer>();
 builder.Services.AddSingleton<LuaAnalyzer>();
 builder.Services.AddSingleton<AnalysisPipeline>();
 builder.Services.AddSingleton<CleanupService>();
+builder.Services.AddSingleton<AdminGuardService>();
 
 builder.Services.AddSingleton(Channel.CreateUnbounded<AnalysisRequest>(new UnboundedChannelOptions
 {
@@ -64,7 +66,13 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-app.UseStatusCodePagesWithRedirects("/NotFound");
+app.UseStatusCodePages(context =>
+{
+    if (context.HttpContext.Request.Path.StartsWithSegments("/api"))
+        return Task.CompletedTask;
+    context.HttpContext.Response.Redirect("/NotFound");
+    return Task.CompletedTask;
+});
 
 app.UseStaticFiles();
 app.UseRouting();

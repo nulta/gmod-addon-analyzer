@@ -6,43 +6,77 @@
 
 <h1>Admin &mdash; Artifact Maintenance</h1>
 
-<p class="muted">Extracted artifacts older than @Model.TtlDays days are removed automatically. You can also remove them manually here.</p>
-
-<form method="post" asp-page-handler="Sweep" onsubmit="return confirm('Run cleanup sweep now?')">
-    <button class="secondary" type="submit">Run cleanup sweep now</button>
-</form>
-
-@if (Model.Addons.Count == 0)
+@if (Model.NeedsLogin)
 {
-    <p class="muted">No addons analyzed yet.</p>
+    if (Model.IsLockedOut)
+    {
+        <div class="card">
+            <h2 class="danger">Locked out</h2>
+            <p>Too many failed attempts. Try again after @Model.LockoutUntil.ToString("u").</p>
+        </div>
+    }
+    else
+    {
+        <div class="card">
+            <h2>Login</h2>
+            <form method="post" asp-page-handler="Login">
+                <div class="form-row">
+                    <label for="password">Admin password</label>
+                    <input type="password" id="password" name="password" autocomplete="current-password" />
+                </div>
+                <button type="submit">Log in</button>
+            </form>
+            @if (Model.LoginError is not null)
+            {
+                <p class="danger">@Model.LoginError</p>
+            }
+        </div>
+    }
 }
 else
 {
-    <table>
-        <thead>
-            <tr><th>Addon</th><th>Last fetched</th><th>Age</th><th>Extracted</th><th></th></tr>
-        </thead>
-        <tbody>
-        @foreach (var a in Model.Addons)
-        {
-            <tr>
-                <td><a asp-page="/Report" asp-route-id="@a.WorkshopId">@a.WorkshopId</a> @a.Title</td>
-                <td>@a.LastFetchedAt.ToString("u")</td>
-                <td class="muted">@((DateTime.UtcNow - a.LastFetchedAt).Days)d</td>
-                <td>
-                    @if (a.ExtractedSizeBytes > 0) { <span class="ok">on disk</span> }
-                    else { <span class="muted">removed</span> }
-                </td>
-                <td>
-                    @if (a.ExtractedSizeBytes > 0)
-                    {
-                        <form method="post" asp-page-handler="Delete" asp-route-id="@a.WorkshopId" onsubmit="return confirm('Delete extracted artifacts for addon @a.WorkshopId? Metadata will be kept.')">
-                            <button class="secondary danger" type="submit">Delete artifacts</button>
-                        </form>
-                    }
-                </td>
-            </tr>
-        }
-        </tbody>
-    </table>
+    <p class="muted">Extracted artifacts older than @Model.TtlDays days are removed automatically. You can also remove them manually here.</p>
+
+    <form method="post" asp-page-handler="Sweep" onsubmit="return confirm('Run cleanup sweep now?')">
+        <button class="secondary" type="submit">Run cleanup sweep now</button>
+    </form>
+
+    <form method="post" asp-page-handler="Logout" style="display:inline; margin-left:12px">
+        <button class="secondary" type="submit">Log out</button>
+    </form>
+
+    @if (Model.Addons.Count == 0)
+    {
+        <p class="muted">No addons analyzed yet.</p>
+    }
+    else
+    {
+        <table>
+            <thead>
+                <tr><th>Addon</th><th>Last fetched</th><th>Age</th><th>Extracted</th><th></th></tr>
+            </thead>
+            <tbody>
+            @foreach (var a in Model.Addons)
+            {
+                <tr>
+                    <td><a asp-page="/Report" asp-route-id="@a.WorkshopId">@a.WorkshopId</a> @a.Title</td>
+                    <td>@a.LastFetchedAt.ToString("u")</td>
+                    <td class="muted">@((DateTime.UtcNow - a.LastFetchedAt).Days)d</td>
+                    <td>
+                        @if (a.ExtractedSizeBytes > 0) { <span class="ok">on disk</span> }
+                        else { <span class="muted">removed</span> }
+                    </td>
+                    <td>
+                        @if (a.ExtractedSizeBytes > 0)
+                        {
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@a.WorkshopId" onsubmit="return confirm('Delete extracted artifacts for addon @a.WorkshopId? Metadata will be kept.')">
+                                <button class="secondary danger" type="submit">Delete artifacts</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    }
 }

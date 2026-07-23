@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GmodAddonAnalyzer.Migrations
 {
     [DbContext(typeof(AnalyzerDbContext))]
-    [Migration("20260723133345_Initial")]
+    [Migration("20260723141433_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -205,17 +205,6 @@ namespace GmodAddonAnalyzer.Migrations
                         .WithMany("Files")
                         .HasForeignKey("AddonId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Addon");
-                });
-
-            modelBuilder.Entity("GmodAddonAnalyzer.Data.Entities.AnalysisRun", b =>
-                {
-                    b.HasOne("GmodAddonAnalyzer.Data.Entities.Addon", "Addon")
-                        .WithMany()
-                        .HasForeignKey("AddonId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Addon");

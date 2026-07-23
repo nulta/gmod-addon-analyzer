@@ -90,8 +90,8 @@ public sealed class FetchService
         return $"""
         @ShutdownOnFailedCommand 1
         @NoPromptForPassword 1
-        login anonymous
         force_install_dir {packedDir.Replace('\\', '/')}
+        login anonymous
         workshop_download_item {_options.WorkshopAppId} {addonId}
         quit
         """;

@@ -59,6 +59,22 @@ public static class StatusEndpoints
             if (run is null) return Results.NotFound();
             return Results.Json(new StatusDto(run.Status.ToString(), run.ErrorMessage));
         });
+
+        app.MapGet("/api/file/{addonId:long}", async (long addonId, string path, IDbContextFactory<AnalyzerDbContext> dbFactory,
+            ArtifactStore store) =>
+        {
+            if (string.IsNullOrEmpty(path)) return Results.BadRequest("missing path");
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var addon = await db.Addons.FirstOrDefaultAsync(a => a.WorkshopId == addonId);
+            if (addon is null) return Results.NotFound();
+            var file = await db.AddonFiles.FirstOrDefaultAsync(f => f.AddonId == addon.Id && f.RelativePath == path);
+            if (file is null) return Results.NotFound();
+            var fullPath = System.IO.Path.Combine(store.ExtractedDir(addonId), path.Replace('/', System.IO.Path.DirectorySeparatorChar));
+            if (!System.IO.File.Exists(fullPath)) return Results.NotFound("artifacts removed");
+            var stream = System.IO.File.OpenRead(fullPath);
+            var fileName = System.IO.Path.GetFileName(path);
+            return Results.File(stream, contentType: "application/octet-stream", fileDownloadName: fileName);
+        });
     }
 
     private static string? TruncateIp(string? ip)

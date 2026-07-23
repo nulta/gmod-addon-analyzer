@@ -69,18 +69,22 @@ else
             <table>
                 <thead><tr><th>Metric</th><th>Count</th><th>Size</th></tr></thead>
                 <tbody>
-                    <tr><td>Models</td><td>@Model.Addon.ModelCount</td><td>@Model.Addon.ModelSizeBytes bytes</td></tr>
-                    <tr><td>Materials</td><td>@Model.Addon.MaterialCount</td><td>@Model.Addon.MaterialSizeBytes bytes</td></tr>
-                    <tr><td>Sounds</td><td>@Model.Addon.SoundCount</td><td>@Model.Addon.SoundSizeBytes bytes</td></tr>
-                    <tr><td>Lua</td><td>@Model.Addon.LuaCount</td><td>@Model.Addon.LuaSizeBytes bytes</td></tr>
+                    <tr><td>Models</td><td>@Model.Addon.ModelCount</td><td title="@Model.Addon.ModelSizeBytes bytes">@FileSize.Humanize(Model.Addon.ModelSizeBytes)</td></tr>
+                    <tr><td>Materials</td><td>@Model.Addon.MaterialCount</td><td title="@Model.Addon.MaterialSizeBytes bytes">@FileSize.Humanize(Model.Addon.MaterialSizeBytes)</td></tr>
+                    <tr><td>Sounds</td><td>@Model.Addon.SoundCount</td><td title="@Model.Addon.SoundSizeBytes bytes">@FileSize.Humanize(Model.Addon.SoundSizeBytes)</td></tr>
+                    <tr><td>Lua</td><td>@Model.Addon.LuaCount</td><td title="@Model.Addon.LuaSizeBytes bytes">@FileSize.Humanize(Model.Addon.LuaSizeBytes)</td></tr>
                 </tbody>
             </table>
             <p>
-                Packed: @Model.Addon.PackedSizeBytes bytes &middot;
-                Extracted: @Model.Addon.ExtractedSizeBytes bytes
+                Packed: <span title="@Model.Addon.PackedSizeBytes bytes">@FileSize.Humanize(Model.Addon.PackedSizeBytes)</span> &middot;
+                Extracted: <span title="@Model.Addon.ExtractedSizeBytes bytes">@FileSize.Humanize(Model.Addon.ExtractedSizeBytes)</span>
             </p>
             <p>
                 <a asp-page="/Explorer" asp-route-id="@Model.Addon.WorkshopId">Browse files</a>
+                @if (Model.Addon.LuaCount > 0)
+                {
+                    <span> &middot; <a asp-page="/LuaTags" asp-route-id="@Model.Addon.WorkshopId">Lua tags</a></span>
+                }
             </p>
         </div>
 

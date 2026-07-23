@@ -38,23 +38,18 @@ public sealed class GmaExtractorTests
         WriteNullString(bw, "tester");
         bw.Write(1); // addon version
 
-        // file 1
-        bw.Write(1u);
-        WriteNullString(bw, "lua/init.lua");
+        // File entry headers come first (filenum, name, size, crc) — bodies follow after filenum=0.
         var body1 = Encoding.UTF8.GetBytes("print('hi')\n");
-        bw.Write((long)body1.Length);
-        bw.Write(0u); // crc
-        bw.Write(body1);
-
-        // file 2
-        bw.Write(2u);
-        WriteNullString(bw, "models/foo.mdl");
         var body2 = new byte[] { 1, 2, 3 };
-        bw.Write((long)body2.Length);
-        bw.Write(0u);
+
+        bw.Write(1u); WriteNullString(bw, "lua/init.lua");  bw.Write((long)body1.Length); bw.Write(0u);
+        bw.Write(2u); WriteNullString(bw, "models/foo.mdl"); bw.Write((long)body2.Length); bw.Write(0u);
+        bw.Write(0u); // end of entries
+
+        // Now the bodies, contiguous.
+        bw.Write(body1);
         bw.Write(body2);
 
-        bw.Write(0u); // end of entries
         bw.Write(0u); // trailing CRC32 (we don't verify)
         return ms.ToArray();
     }
