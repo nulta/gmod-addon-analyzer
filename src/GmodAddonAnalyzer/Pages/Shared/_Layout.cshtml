@@ -1,0 +1,29 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Gmod Addon Analyzer</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body>
+    <header>
+        <nav class="nav">
+            <a class="nav-brand" asp-page="/Index">Gmod Addon Analyzer</a>
+            <ul>
+                <li><a asp-page="/Index">Home</a></li>
+                <li><a asp-page="/History">History</a></li>
+                <li><a asp-page="/Admin">Admin</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        @RenderBody()
+    </main>
+    <footer>
+        <p>Garry's Mod Addon Analyzer &middot; static analysis only &middot; no addons are executed</p>
+    </footer>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

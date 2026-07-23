@@ -1,0 +1,56 @@
+@page "/viewer/{id:long}"
+@model GmodAddonAnalyzer.Pages.ViewerModel
+@{
+    ViewData["Title"] = Model.File?.RelativePath ?? "File";
+}
+
+<h1>@(Model.File?.RelativePath ?? "File not found")</h1>
+<p><a asp-page="/Explorer" asp-route-id="@Model.WorkshopId">&larr; back to explorer</a></p>
+
+@if (Model.File is null)
+{
+    <p class="muted">File not found in this addon.</p>
+}
+else
+{
+    <p>
+        @Model.File.Category &middot; @Model.File.SizeBytes bytes &middot; .@Model.File.Extension
+    </p>
+    <p>
+        <button class="secondary" onclick="navigator.clipboard.writeText(window.location.href); this.textContent='Copied';">
+            Copy permalink
+        </button>
+    </p>
+
+    @if (Model.Lua is not null)
+    {
+        <table>
+            <tbody>
+                <tr><th>Realm</th><td><span class="badge badge-@Model.Lua.Realm">@Model.Lua.Realm</span></td></tr>
+                <tr><th>Kind</th><td>@Model.Lua.Kind</td></tr>
+                <tr><th>Risk</th><td><span class="badge badge-@Model.Lua.RiskLevel">@Model.Lua.RiskLevel</span></td></tr>
+                <tr><th>Signals</th><td><code>@Model.Lua.RiskSignals</code></td></tr>
+                <tr><th>Hooks declared</th><td><code>@Model.Lua.HooksDeclared</code></td></tr>
+                <tr><th>Hooks called</th><td><code>@Model.Lua.HooksCalled</code></td></tr>
+                <tr><th>Timers</th><td>@Model.Lua.TimersCreated</td></tr>
+                <tr><th>Net sent</th><td><code>@Model.Lua.NetMessagesSent</code></td></tr>
+                <tr><th>Net receivers</th><td>@Model.Lua.NetReceivers</td></tr>
+                <tr><th>Lines</th><td>@Model.Lua.Lines</td></tr>
+            </tbody>
+        </table>
+    }
+
+    @if (Model.SourceHtml is not null)
+    {
+        <h2>Source</h2>
+        <pre><code>@Html.Raw(Model.SourceHtml)</code></pre>
+    }
+    else if (Model.OnDisk)
+    {
+        <p class="muted">Binary file — preview not available.</p>
+    }
+    else
+    {
+        <p class="muted">File artifacts have been removed (TTL or manual cleanup). Metadata retained.</p>
+    }
+}

@@ -1,0 +1,42 @@
+﻿@page
+@model GmodAddonAnalyzer.Pages.IndexModel
+@{
+    ViewData["Title"] = "Home";
+}
+
+<h1>Garry's Mod Addon Analyzer</h1>
+<p class="muted">Enter a Steam Workshop addon ID to fetch, extract, and statically analyze it.</p>
+
+<div class="card">
+    <div class="form-row">
+        <label for="addonId">Workshop Addon ID</label>
+        <input type="number" id="addonId" name="addonId" placeholder="e.g. 104603291" min="1" />
+        <div class="hint">SteamCMD will download and we'll extract and analyze the addon. No accounts needed.</div>
+    </div>
+    <button id="analyzeBtn" type="button" disabled>Analyze</button>
+    <span id="powStatus" class="muted"></span>
+</div>
+
+@if (Model.RecentRuns.Count > 0)
+{
+    <h2>Recent submissions</h2>
+    <table>
+        <thead>
+            <tr><th>When</th><th>Addon</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+        @foreach (var r in Model.RecentRuns)
+        {
+            <tr>
+                <td>@r.SubmittedAt.ToString("u")</td>
+                <td><a asp-page="/Report" asp-route-id="@r.AddonId">@r.AddonId</a></td>
+                <td><span class="badge badge-@r.Status">@r.Status</span></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@section Scripts {
+    <script src="~/js/pow.js" asp-append-version="true"></script>
+}

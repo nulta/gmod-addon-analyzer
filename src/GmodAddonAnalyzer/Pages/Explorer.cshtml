@@ -1,0 +1,23 @@
+@page "/explorer/{id:long}"
+@model GmodAddonAnalyzer.Pages.ExplorerModel
+@{
+    ViewData["Title"] = $"Browse {Model.WorkshopId}";
+}
+
+<h1>Browse addon @Model.WorkshopId</h1>
+<p><a asp-page="/Report" asp-route-id="@Model.WorkshopId">&larr; back to report</a></p>
+
+@if (Model.Addon is null)
+{
+    <p class="muted">Addon not analyzed yet.</p>
+}
+else if (Model.Entries.Count == 0)
+{
+    <p class="muted">No files. Artifacts may have been removed.</p>
+}
+else
+{
+    <div class="tree">
+        @Html.Raw(Model.TreeHtml)
+    </div>
+}

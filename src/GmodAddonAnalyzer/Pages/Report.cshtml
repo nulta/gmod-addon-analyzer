@@ -1,0 +1,107 @@
+@page "/report/{id:long}"
+@model GmodAddonAnalyzer.Pages.ReportModel
+@using GmodAddonAnalyzer.Data.Entities
+@{
+    ViewData["Title"] = $"Addon {Model.WorkshopId}";
+}
+
+<h1>Addon @Model.WorkshopId</h1>
+
+@if (Model.Run is null)
+{
+    <p class="muted">No analysis run found for this addon.</p>
+    <p><a asp-page="/Index">Submit it</a></p>
+}
+else
+{
+    <p>
+        <span class="badge badge-@Model.Run.Status">@Model.Run.Status</span>
+        &middot; submitted @Model.Run.SubmittedAt.ToString("u")
+        @if (Model.RunId is not null)
+        {
+            <span class="muted"> &middot; run #@Model.RunId</span>
+        }
+    </p>
+
+    @if (Model.Run.Status is AnalysisStatus.FetchFailed or AnalysisStatus.ExtractFailed)
+    {
+        <div class="card">
+            <h2 class="danger">Analysis failed: @Model.Run.Status</h2>
+            @if (!string.IsNullOrEmpty(Model.Run.ErrorMessage))
+            {
+                <pre>@Model.Run.ErrorMessage</pre>
+            }
+            <p><a asp-page="/Index">Resubmit</a></p>
+        </div>
+    }
+    else if (Model.Addon is null && Model.Run.Status != AnalysisStatus.Done)
+    {
+        <div class="card">
+            <p>Analysis is in progress.</p>
+            <p class="muted" id="statusHint">Current status: @Model.Run.Status</p>
+        </div>
+        @section Scripts {
+        <script>
+            (function () {
+                const runId = @Model.RunId;
+                const hint = document.getElementById("statusHint");
+                async function poll() {
+                    try {
+                        const r = await fetch(`/status/${runId}`, { cache: "no-store" });
+                        if (!r.ok) return;
+                        const s = await r.json();
+                        hint.textContent = "Current status: " + s.status + (s.error ? " — " + s.error : "");
+                        if (s.status === "Done" || s.status === "FetchFailed" || s.status === "ExtractFailed") {
+                            window.location.reload();
+                        }
+                    } catch (e) {}
+                }
+                setInterval(poll, 2000);
+            })();
+        </script>
+        }
+    }
+    else if (Model.Addon is not null)
+    {
+        <div class="card">
+            <h2>@Model.Addon.Title</h2>
+            <p class="muted">Workshop id @Model.Addon.WorkshopId &middot; updated @Model.Addon.UpdatedAt.ToString("u") &middot; fetched @Model.Addon.LastFetchedAt.ToString("u")</p>
+            <table>
+                <thead><tr><th>Metric</th><th>Count</th><th>Size</th></tr></thead>
+                <tbody>
+                    <tr><td>Models</td><td>@Model.Addon.ModelCount</td><td>@Model.Addon.ModelSizeBytes bytes</td></tr>
+                    <tr><td>Materials</td><td>@Model.Addon.MaterialCount</td><td>@Model.Addon.MaterialSizeBytes bytes</td></tr>
+                    <tr><td>Sounds</td><td>@Model.Addon.SoundCount</td><td>@Model.Addon.SoundSizeBytes bytes</td></tr>
+                    <tr><td>Lua</td><td>@Model.Addon.LuaCount</td><td>@Model.Addon.LuaSizeBytes bytes</td></tr>
+                </tbody>
+            </table>
+            <p>
+                Packed: @Model.Addon.PackedSizeBytes bytes &middot;
+                Extracted: @Model.Addon.ExtractedSizeBytes bytes
+            </p>
+            <p>
+                <a asp-page="/Explorer" asp-route-id="@Model.Addon.WorkshopId">Browse files</a>
+            </p>
+        </div>
+
+        @if (Model.TopRiskLua.Count > 0)
+        {
+            <h2>Riskiest Lua files</h2>
+            <table>
+                <thead><tr><th>Path</th><th>Realm</th><th>Kind</th><th>Risk</th><th>Signals</th></tr></thead>
+                <tbody>
+                @foreach (var l in Model.TopRiskLua)
+                {
+                    <tr>
+                        <td><a asp-page="/Viewer" asp-route-id="@Model.Addon.WorkshopId" asp-route-path="@l.AddonFile?.RelativePath">@l.AddonFile?.RelativePath</a></td>
+                        <td><span class="badge badge-@l.Realm">@l.Realm</span></td>
+                        <td>@l.Kind</td>
+                        <td><span class="badge badge-@l.RiskLevel">@l.RiskLevel</span></td>
+                        <td class="muted"><code>@l.RiskSignals</code></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+    }
+}

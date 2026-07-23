@@ -1,0 +1,17 @@
+## .NET build output
+bin/
+obj/
+*.user
+*.suo
+
+## Runtime data (artifacts, sqlite db, steamcmd, logs)
+data/
+
+## IDE
+.vs/
+.idea/
+.vscode/
+
+## OS
+Thumbs.db
+.DS_Store
