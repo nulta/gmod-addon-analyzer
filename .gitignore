@@ -5,7 +5,20 @@ obj/
 *.suo
 
 ## Runtime data (artifacts, sqlite db, steamcmd, logs)
-data/
+## Anchored patterns: an unanchored `data/` also matched the SOURCE folder
+## src/GmodAddonAnalyzer/Data/ on case-insensitive filesystems
+## (core.ignorecase=true), so the entities were silently never committed.
+## This repo sets core.ignorecase=false to keep them apart.
+/data/
+/src/GmodAddonAnalyzer/data/
+# On case-insensitive filesystems the app's runtime "./data" collides with the
+# source "Data/" directory, so the runtime entries land inside it. Ignore them
+# by exact (lowercase) name -- core.ignorecase=false keeps these from shadowing
+# source files.
+/src/GmodAddonAnalyzer/Data/artifacts/
+/src/GmodAddonAnalyzer/Data/logs/
+/src/GmodAddonAnalyzer/Data/steamcmd/
+/src/GmodAddonAnalyzer/Data/analyzer.db*
 
 ## Docker
 .env

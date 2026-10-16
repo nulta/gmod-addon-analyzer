@@ -1,0 +1,17 @@
+# Keep the build context lean and host junk (esp. stale Windows bin/obj) out.
+.git/
+.github/
+.gitignore
+docs/
+tests/
+*.md
+GmodAddonAnalyzer.slnx
+**/bin/
+**/obj/
+
+# Runtime data (app DB, steamcmd, logs) -- never ship into the image.
+/data/
+src/GmodAddonAnalyzer/data/
+
+# Compose secrets (e.g. ADMIN_PASSWORD) live here on the host.
+.env
