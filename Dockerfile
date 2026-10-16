@@ -9,12 +9,16 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 COPY --from=build /app/publish ./
 
-# Run as an unprivileged user. The app writes only to /app/data (volume) and /tmp;
-# a named /app/data volume inherits this ownership on first use.
-RUN groupadd --gid 1001 app \
-    && useradd --uid 1001 --gid app --home /home/app app \
+# Run as an unprivileged user. .NET 8+ base images already ship a non-root
+# user/group `app` (APP_UID, home /app); only create uid 1001 on older bases.
+# The app writes only to /app/data (volume, whose named volume inherits this
+# ownership on first use) and /tmp.
+RUN getent passwd app >/dev/null 2>&1 \
+        || groupadd --gid 1001 app \
+        && getent passwd app >/dev/null 2>&1 \
+        || useradd --uid 1001 --gid app --create-home --home-dir /home/app app \
     && mkdir -p /app/data \
-    && chown -R app:app /app /home/app
+    && chown -R app:app /app
 USER app
 
 EXPOSE 8080
