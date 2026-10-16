@@ -111,4 +111,27 @@ public sealed class LuaAnalyzerTests
         var r = _a.Analyze("lua/x.lua", src);
         Assert.Equal(3, r.Lines);
     }
+
+    [Fact]
+    public void AttackerNames_AreEscapedAndClampedToDbColumnLimit()
+    {
+        // 200 distinct 4000-char hook names would overflow the 2048-char DB
+        // columns; the analyzer must clamp instead of failing the run's write.
+        var src = string.Join(" ", Enumerable.Range(0, 200)
+            .Select(i => $"hook.Add('{new string('a', 4000)}{i:D3}', 'h', f)"));
+        var r = _a.Analyze("lua/x.lua", src);
+
+        Assert.NotEqual("[]", r.HooksDeclared);
+        Assert.True(r.HooksDeclared.Length <= LuaAnalyzer.MaxFieldChars);
+
+        var r2 = _a.Analyze("lua/x.lua", $"util.AddNetworkString('{new string('n', 8000)}')");
+        Assert.True(r2.NetMessagesSent.Length <= LuaAnalyzer.MaxFieldChars);
+
+        // Backslashes stay JSON-escaped, and raw < > probes are preserved for the
+        // (now encoding-only) pages to HTML-escape at render time.
+        var r3 = _a.Analyze("lua/x.lua", "hook.Add('<img src=x onerror=alert(1)>', 'h', f)");
+        Assert.Contains("<img src=x onerror=alert(1)>", r3.HooksDeclared);
+        var r4 = _a.Analyze("lua/x.lua", "hook.Add('a\\b', 'h', f)");
+        Assert.Contains("a\\\\b", r4.HooksDeclared);
+    }
 }

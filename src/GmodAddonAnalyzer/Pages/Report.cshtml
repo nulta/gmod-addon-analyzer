@@ -27,9 +27,13 @@ else
     {
         <div class="card">
             <h2 class="danger">Analysis failed: @Model.Run.Status</h2>
-            @if (!string.IsNullOrEmpty(Model.Run.ErrorMessage))
+            @if (!string.IsNullOrEmpty(Model.ErrorDetail))
             {
-                <pre>@Model.Run.ErrorMessage</pre>
+                <pre>@Model.ErrorDetail</pre>
+            }
+            else
+            {
+                <p class="muted">Failure details are only shown to the admin account.</p>
             }
             <p><a asp-page="/Index">Resubmit</a></p>
         </div>
@@ -38,27 +42,10 @@ else
     {
         <div class="card">
             <p>Analysis is in progress.</p>
-            <p class="muted" id="statusHint">Current status: @Model.Run.Status</p>
+            <p class="muted" id="statusHint" data-run-id="@Model.RunId">Current status: @Model.Run.Status</p>
         </div>
         @section Scripts {
-        <script>
-            (function () {
-                const runId = @Model.RunId;
-                const hint = document.getElementById("statusHint");
-                async function poll() {
-                    try {
-                        const r = await fetch(`/status/${runId}`, { cache: "no-store" });
-                        if (!r.ok) return;
-                        const s = await r.json();
-                        hint.textContent = "Current status: " + s.status + (s.error ? " — " + s.error : "");
-                        if (s.status === "Done" || s.status === "FetchFailed" || s.status === "ExtractFailed") {
-                            window.location.reload();
-                        }
-                    } catch (e) {}
-                }
-                setInterval(poll, 2000);
-            })();
-        </script>
+            <script src="~/js/run-poll.js" asp-append-version="true"></script>
         }
     }
     else if (Model.Addon is not null)

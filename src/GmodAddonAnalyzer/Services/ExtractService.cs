@@ -8,6 +8,13 @@ public sealed class ExtractException(string message) : Exception(message);
 
 public sealed class ExtractService
 {
+    // Hard resource limits: archives come from untrusted Steam Workshop uploads,
+    // so unbounded entry counts/names/sizes would allow trivial disk/memory DoS.
+    public const int MaxEntries = 100_000;
+    public const int MaxNameBytes = 4096;
+    public const long MaxEntryBytes = 1L << 30;   // 1 GiB per file
+    public const long MaxTotalBytes = 4L << 30;   // 4 GiB per archive
+
     private readonly ILogger<ExtractService> _logger;
 
     public ExtractService(ILogger<ExtractService> logger) => _logger = logger;
@@ -49,23 +56,34 @@ public sealed class ExtractService
         // File entry headers (filenum, name, size, crc) come first, all contiguous.
         // The bodies follow after a filenum=0 terminator. (Per Facepunch/gmad AddonReader.)
         var entries = new List<(string Name, long Size)>();
+        var declaredTotal = 0L;
         while (true)
         {
             var fileNum = BitConverter.ToUInt32(await ReadExactAsync(fs, 4, ct), 0);
             if (fileNum == 0) break;
+            if (entries.Count >= MaxEntries)
+                throw new ExtractException($"Too many GMA entries (limit {MaxEntries}).");
             var name = await ReadNullStringAsync(fs, ct);
             var size = BitConverter.ToInt64(await ReadExactAsync(fs, 8, ct), 0);
             await ReadExactAsync(fs, 4, ct); // crc
-            _logger.LogInformation("GMA entry #{Num} name='{Name}' size={Size}", fileNum, name, size);
+            _logger.LogInformation("GMA entry #{Num} name='{Name}' size={Size}", fileNum, LogSafe(name), size);
             if (string.IsNullOrEmpty(name))
                 throw new ExtractException($"GMA entry #{fileNum} had empty name");
+            if (size < 0)
+                throw new ExtractException($"GMA entry #{fileNum} declared negative size.");
+            if (size > MaxEntryBytes)
+                throw new ExtractException($"GMA entry #{fileNum} exceeds the per-file size limit.");
+            declaredTotal += size;
+            if (declaredTotal > MaxTotalBytes)
+                throw new ExtractException("GMA exceeds the total extracted size limit.");
             entries.Add((name, size));
         }
 
         // Now the file bodies are contiguous starting at the current position.
         foreach (var (name, size) in entries)
         {
-            var outPath = Path.Combine(destDir, name.Replace('/', Path.DirectorySeparatorChar));
+            ct.ThrowIfCancellationRequested();
+            var outPath = SafePath.Resolve(destDir, name);
             var outDir = Path.GetDirectoryName(outPath);
             if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
             await using var outFs = File.Create(outPath);
@@ -107,6 +125,8 @@ public sealed class ExtractService
             var b = s.ReadByte();
             if (b < 0) throw new ExtractException("Unexpected end of stream in string.");
             if (b == 0) break;
+            if (bytes.Count >= MaxNameBytes)
+                throw new ExtractException("Excessively long string in archive header.");
             bytes.Add((byte)b);
         }
         return Encoding.UTF8.GetString(bytes.ToArray());
@@ -132,6 +152,11 @@ public sealed class ExtractService
     private async Task ExtractTarAsync(Stream tar, string destDir, CancellationToken ct)
     {
         var header = new byte[512];
+        // The GMA path caps entries + total bytes; the legacy path must too, or a
+        // gzip bomb decompressing to terabytes of zeros (or millions of empty
+        // entries) exhausts disk/inodes before the TTL sweeper can react.
+        long entryCount = 0;
+        long totalBytes = 0;
         while (true)
         {
             var read = await ReadExactOptAsync(tar, header, 512, ct);
@@ -145,23 +170,33 @@ public sealed class ExtractService
             var name = Encoding.UTF8.GetString(nameRaw, 0, nameEnd);
             if (string.IsNullOrEmpty(name)) continue;
 
+            entryCount++;
+            if (entryCount > MaxEntries)
+                throw new ExtractException($"Too many archive entries (limit {MaxEntries}).");
+
             var sizeStr = Encoding.ASCII.GetString(header, 124, 12).TrimEnd('\0', ' ').Trim();
             long size = sizeStr.Length > 0 ? Convert.ToInt64(sizeStr, 8) : 0;
+            if (size < 0) throw new ExtractException($"Tar entry '{name}' declared negative size.");
+            if (size > MaxEntryBytes)
+                throw new ExtractException($"Tar entry '{name}' exceeds the per-file size limit.");
+            totalBytes += size;
+            if (totalBytes > MaxTotalBytes)
+                throw new ExtractException("Archive exceeds the total extracted size limit.");
 
             var typeFlag = (char)header[156];
 
-            var outPath = Path.Combine(destDir, name.Replace('/', Path.DirectorySeparatorChar));
-            var outDir = Path.GetDirectoryName(outPath);
-            if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
-
             if (typeFlag == '5')
             {
-                Directory.CreateDirectory(outPath);
+                Directory.CreateDirectory(SafePath.Resolve(destDir, name));
                 continue;
             }
 
             if (typeFlag is '\0' or '0')
             {
+                ct.ThrowIfCancellationRequested();
+                var outPath = SafePath.Resolve(destDir, name);
+                var outDir = Path.GetDirectoryName(outPath);
+                if (!string.IsNullOrEmpty(outDir)) Directory.CreateDirectory(outDir);
                 await using var outFs = File.Create(outPath);
                 var remaining = size;
                 var buf = new byte[64 * 1024];
@@ -178,13 +213,33 @@ public sealed class ExtractService
             }
             else
             {
+                // Non-regular entries (links, devices, ...) are never extracted; skip
+                // their bytes with a small buffer instead of allocating `size` at once.
                 if (size > 0)
                 {
-                    var skip = (int)((size + 511) / 512 * 512);
-                    await ReadExactOptAsync(tar, new byte[skip], skip, ct);
+                    var skip = (size + 511) / 512 * 512;
+                    var discard = new byte[64 * 1024];
+                    while (skip > 0)
+                    {
+                        var n = (int)Math.Min(skip, discard.Length);
+                        var r = await ReadExactOptAsync(tar, discard, n, ct);
+                        if (r == 0) break;
+                        skip -= r;
+                    }
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Untrusted archive names reach the log; strip line breaks before logging so
+    /// forged multi-line entries cannot masquerade as other log authors, and cap
+    /// the length.
+    /// </summary>
+    internal static string LogSafe(string s)
+    {
+        var cleaned = s.Replace("\r", "").Replace("\n", " ");
+        return cleaned.Length > 120 ? cleaned[..120] + "…" : cleaned;
     }
 
     private static async Task<int> ReadExactOptAsync(Stream s, byte[] buffer, int count, CancellationToken ct)

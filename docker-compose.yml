@@ -4,16 +4,44 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "5249:8080"
+      # Loopback only. The app does not terminate TLS; publishing the port
+      # publicly serves plaintext HTTP (the admin password travels in POST
+      # bodies). Put a reverse proxy with TLS on the host in front and keep the
+      # container port loopback-bound.
+      - "127.0.0.1:5249:8080"
     volumes:
       - data:/app/data
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      # 21 bits is a few seconds per submit in a browser worker. It is a speed
+      # bump only (a native client does ~10M SHA-256/s); the per-IP rate limits
+      # in Program.cs are the real control.
       Analyzer__PowDifficulty: "21"
       Analyzer__CleanupTtlDays: "1"
       Analyzer__CleanupIntervalHours: "6"
       Analyzer__AdminPassword: ${ADMIN_PASSWORD:-}
+      Analyzer__FetchTimeoutMinutes: "15"
+      # Set true only when a reverse proxy that sends X-Forwarded-For runs on the
+      # same host (the app trusts only loopback proxies by default). When true,
+      # list that proxy explicitly, e.g. Analyzer__KnownProxies__0=172.18.0.5 —
+      # otherwise all clients share the proxy IP for rate limiting/lockout.
+      Analyzer__TrustProxy: "false"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 2g
+    cpus: "2"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/8080'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   data:

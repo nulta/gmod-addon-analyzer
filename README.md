@@ -34,6 +34,12 @@ All settings are optional and can be set via environment variables (`Analyzer__<
 | `Analyzer:PowEnabled`  | `true`       | Set `false` to skip proof-of-work entirely        |
 | `Analyzer:CleanupTtlDays`| `5`        | Extracted artifacts auto-removed after this many days |
 | `Analyzer:CleanupIntervalHours`| `6`  | How often the cleanup sweeper runs               |
+| `Analyzer:RunTtlDays`  | `30`         | `AnalysisRun` rows trimmed after this many days  |
+| `Analyzer:MaxQueuedAnalyses`| `100`   | Bounded analysis queue depth (extra submits get 503) |
+| `Analyzer:MaxPendingAnalysisRuns`| `100` | Cap on non-terminal DB rows (restart backstop) |
+| `Analyzer:ResubmitCooldownMinutes`| `30` | Min delay before the same addon is re-analyzed |
+| `Analyzer:TrustProxy`  | `false`      | Trust `X-Forwarded-For`/`-Proto` from loopback proxies |
+| `Analyzer:KnownProxies`| `[]`         | Additional trusted proxies (IP or CIDR entries)  |
 
 Example with environment variables:
 
@@ -42,3 +48,27 @@ Analyzer__SteamCmdPath=/path/to/steamcmd \
 Analyzer__PowDifficulty=4 \
 dotnet run --project src/GmodAddonAnalyzer --launch-profile http
 ```
+
+## Production deployment
+
+The app does **not** terminate TLS. Run a reverse proxy in front (nginx/Caddy/
+traefik) and keep the container port loopback-bound — `docker-compose.yml`
+publishes `127.0.0.1:5249:8080` by default for exactly this reason. Exposing
+the port publicly serves plaintext HTTP, which exposes the admin password in
+login POST bodies.
+
+When running behind that proxy:
+
+- Set `Analyzer__TrustProxy=true` **only** if the proxy sends
+  `X-Forwarded-For`/`X-Forwarded-Proto`, and list the proxy explicitly, e.g.
+  `Analyzer__KnownProxies__0=172.18.0.5` (single IP) or
+  `Analyzer__KnownProxies__0=10.0.0.0/8` (CIDR). Getting this wrong either
+  merges all clients into one rate-limit bucket (a self-DoS) or lets clients
+  spoof `X-Forwarded-For` to bypass rate limits and admin lockouts.
+- Set `Analyzer__AdminPassword`; left empty, the admin page is fail-closed
+  (disabled).
+- Proof-of-work difficulty is a *speed bump* against casual abuse — a native
+  client solves SHA-256 at millions per second, so the per-IP rate limiter is
+  the real control. Keep both on.
+- Per-run rows are trimmed after `RunTtlDays`; extracted artifacts after
+  `CleanupTtlDays`. Addon metadata rows are kept so report permalinks resolve.

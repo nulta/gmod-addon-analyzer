@@ -67,8 +67,15 @@ public sealed class AdminModel(IDbContextFactory<AnalyzerDbContext> dbFactory, A
         }
         if (guard.TryLogin(password ?? "", ip))
         {
-            Response.Cookies.Append(AdminGuardService.CookieName, AdminGuardService.CookieValue,
-                new CookieOptions { HttpOnly = true, SameSite = SameSiteMode.Strict, MaxAge = TimeSpan.FromHours(12) });
+            var minutes = Math.Max(30, options.AdminSessionMinutes);
+            Response.Cookies.Append(AdminGuardService.CookieName, guard.IssueToken(),
+                new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Strict,
+                    MaxAge = TimeSpan.FromMinutes(minutes),
+                });
             return RedirectToPage();
         }
         LoginError = "Incorrect password.";
@@ -97,5 +104,5 @@ public sealed class AdminModel(IDbContextFactory<AnalyzerDbContext> dbFactory, A
     }
 
     private bool IsAuthorized() =>
-        guard.IsConfigured && Request.Cookies[AdminGuardService.CookieName] == AdminGuardService.CookieValue;
+        guard.IsConfigured && guard.ValidateToken(Request.Cookies[AdminGuardService.CookieName]);
 }

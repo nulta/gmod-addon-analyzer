@@ -34,8 +34,16 @@ public sealed class ExplorerModel(IDbContextFactory<AnalyzerDbContext> dbFactory
             for (int i = 0; i < segs.Length - 1; i++)
             {
                 var seg = segs[i];
-                var next = cur.Children.FirstOrDefault(c => c.IsDir && c.Name == seg);
-                if (next is null) { next = new TreeNode(seg, true); cur.Children.Add(next); }
+                // Dictionary lookup: a linear FirstOrDefault over children made
+                // this O(dirs × files) — an addon with tens of thousands of
+                // directories pinned server threads long enough to starve the
+                // whole request pipeline.
+                if (!cur.DirLookup.TryGetValue(seg, out var next))
+                {
+                    next = new TreeNode(seg, true);
+                    cur.Children.Add(next);
+                    cur.DirLookup[seg] = next;
+                }
                 cur = next;
             }
             cur.Children.Add(new TreeNode(segs[^1], false) { Size = f.SizeBytes, RelativePath = f.RelativePath });
@@ -78,6 +86,8 @@ public sealed class ExplorerModel(IDbContextFactory<AnalyzerDbContext> dbFactory
         public long Size { get; set; }
         public string RelativePath { get; set; } = "";
         public List<TreeNode> Children { get; } = [];
+        /// <summary>O(1) lookup of directory children by name (see BuildTree).</summary>
+        public Dictionary<string, TreeNode> DirLookup { get; } = new(StringComparer.Ordinal);
         public TreeNode(string name, bool isDir) { Name = name; IsDir = isDir; }
     }
 }

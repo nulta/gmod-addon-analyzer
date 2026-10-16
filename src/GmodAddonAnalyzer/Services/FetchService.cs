@@ -67,7 +67,18 @@ public sealed class FetchService
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
 
-            await proc.WaitForExitAsync(ct);
+            // A hung SteamCMD must not stall the single-reader pipeline forever.
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(TimeSpan.FromMinutes(Math.Max(1, _options.FetchTimeoutMinutes)));
+            try
+            {
+                await proc.WaitForExitAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* best effort */ }
+                throw new FetchException(-3, $"SteamCMD timed out after {_options.FetchTimeoutMinutes} minutes.");
+            }
 
             var log = logSb.ToString();
             await File.WriteAllTextAsync(logFile, log, ct);
@@ -127,7 +138,14 @@ public sealed class FetchService
 
     private static void TryChmod(string path)
     {
-        try { Process.Start("chmod", $"+x \"{path}\"")?.WaitForExit(2000); } catch { }
+        try
+        {
+            var psi = new ProcessStartInfo { FileName = "chmod", UseShellExecute = false, CreateNoWindow = true };
+            psi.ArgumentList.Add("+x");
+            psi.ArgumentList.Add(path);
+            Process.Start(psi)?.WaitForExit(2000);
+        }
+        catch { }
     }
 
     private static string ExtractTail(string log, int lines = 40)

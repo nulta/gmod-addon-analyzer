@@ -14,7 +14,7 @@ else
 {
     <table>
         <thead>
-            <tr><th>When</th><th>Addon ID</th><th>Status</th><th>Submitted by</th></tr>
+            <tr><th>When</th><th>Addon ID</th><th>Status</th></tr>
         </thead>
         <tbody>
         @foreach (var r in Model.Runs)
@@ -23,7 +23,6 @@ else
                 <td>@r.SubmittedAt.ToString("u")</td>
                 <td><a asp-page="/Report" asp-route-id="@r.AddonId">@r.AddonId</a></td>
                 <td><span class="badge badge-@r.Status">@r.Status</span></td>
-                <td class="muted">@(r.SubmittedByIp ?? "—")</td>
             </tr>
         }
         </tbody>

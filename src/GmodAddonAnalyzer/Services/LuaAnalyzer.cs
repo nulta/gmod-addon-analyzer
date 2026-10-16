@@ -5,6 +5,8 @@ namespace GmodAddonAnalyzer.Services;
 
 public static class LuaHeuristics
 {
+    internal static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(2);
+
     public static readonly Regex HookAdd = Compile(@"hook\.Add\s*\(\s*[""']([^""']+)[""']");
     public static readonly Regex HookCall = Compile(@"hook\.(?:Call|Run)\s*\(\s*[""']([^""']+)[""']");
     public static readonly Regex TimerCreate = Compile(@"timer\.(?:Create|Simple)\s*\(");
@@ -26,7 +28,7 @@ public static class LuaHeuristics
         ("Require",          RiskLevel.Low,    Compile(@"\brequire\s*\(\s*[""']")),
     ];
 
-    private static Regex Compile(string p) => new(p, RegexOptions.Compiled);
+    private static Regex Compile(string p) => new(p, RegexOptions.Compiled, RegexTimeout);
 }
 
 public sealed class LuaAnalyzer
@@ -99,7 +101,7 @@ public sealed class LuaAnalyzer
         {
             if (HasTable(source, "ENT"))
             {
-                var typeMatch = Regex.Match(source, @"ENT\.Type\s*=\s*[""']([^""']+)[""']");
+                var typeMatch = Regex.Match(source, @"ENT\.Type\s*=\s*[""']([^""']+)[""']", RegexOptions.None, LuaHeuristics.RegexTimeout);
                 if (typeMatch.Success && typeMatch.Groups[1].Value.Contains("ai", Ord))
                     return LuaKind.Snpc;
                 return p.Contains("effects/", Ord) ? LuaKind.Effect : LuaKind.Entity;
@@ -116,8 +118,8 @@ public sealed class LuaAnalyzer
 
     private static string StripComments(string src)
     {
-        src = Regex.Replace(src, @"--\[\[.*?\]\]", "", RegexOptions.Singleline);
-        src = Regex.Replace(src, @"--[^\n]*", "");
+        src = Regex.Replace(src, @"--\[\[.*?\]\]", "", RegexOptions.Singleline, LuaHeuristics.RegexTimeout);
+        src = Regex.Replace(src, @"--[^\n]*", "", RegexOptions.None, LuaHeuristics.RegexTimeout);
         return src;
     }
 
@@ -132,10 +134,26 @@ public sealed class LuaAnalyzer
         return set.ToList();
     }
 
-    private static string ToJsonArray(List<string> items) =>
-        items.Count == 0 ? "[]" : "[\"" + string.Join("\",\"", items.Select(Escape)) + "\"]";
+    // DB columns are HasMaxLength(2048); a crafted addon with 200 capped-length
+    // hook names would otherwise exceed them and fail the run's SaveChanges.
+    internal const int MaxFieldChars = 2048;
+    private const int MaxItemChars = 256;
 
-    private static string Escape(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    private static string ToJsonArray(List<string> items)
+    {
+        if (items.Count == 0) return "[]";
+        var text = "[\"" + string.Join("\",\"", items.Select(Escape)) + "\"]";
+        if (text.Length <= MaxFieldChars) return text;
+        var cut = text[..(MaxFieldChars - 8)];
+        if (cut.EndsWith('\\')) cut = cut[..^1]; // don't split an escape sequence
+        return cut + "\"]";
+    }
+
+    private static string Escape(string s)
+    {
+        if (s.Length > MaxItemChars) s = s[..MaxItemChars];
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    }
 
     private static readonly StringComparison Ord = StringComparison.Ordinal;
 }

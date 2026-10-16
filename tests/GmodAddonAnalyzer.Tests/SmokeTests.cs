@@ -95,4 +95,18 @@ public sealed class SmokeTests : IClassFixture<WebApplicationFactory<Program>>
         var resp = await client.GetAsync("/api/file/123?path=nope.lua");
         Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
     }
+
+    [Fact]
+    public async Task SecurityHeaders_AreSetOnEveryResponse()
+    {
+        var client = _factory.CreateClient();
+        var resp = await client.GetAsync("/");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.Equal("nosniff", resp.Headers.GetValues("X-Content-Type-Options").Single());
+        Assert.Equal("DENY", resp.Headers.GetValues("X-Frame-Options").Single());
+        Assert.Equal("no-referrer", resp.Headers.GetValues("Referrer-Policy").Single());
+        var csp = resp.Headers.GetValues("Content-Security-Policy").Single();
+        Assert.Contains("script-src 'self'", csp);
+        Assert.Contains("frame-ancestors 'none'", csp);
+    }
 }

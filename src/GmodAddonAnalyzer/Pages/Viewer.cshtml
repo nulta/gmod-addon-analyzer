@@ -20,7 +20,7 @@ else
         &middot; .@Model.File.Extension
     </p>
     <p>
-        <button class="secondary" onclick="navigator.clipboard.writeText(window.location.href); this.textContent='Copied';">
+        <button class="secondary" type="button" id="copyPermalink">
             Copy permalink
         </button>
     </p>
@@ -47,6 +47,11 @@ else
     {
         <h2>Source</h2>
         <pre><code>@Html.Raw(Model.SourceHtml)</code></pre>
+    }
+    else if (Model.PreviewSkipped)
+    {
+        <p class="muted">File is too large for preview (over 2 MiB).</p>
+        <p><a href="/api/file/@Model.WorkshopId?path=@Uri.EscapeDataString(Model.File.RelativePath)" download>Download @Model.File.RelativePath</a></p>
     }
     else if (Model.OnDisk)
     {

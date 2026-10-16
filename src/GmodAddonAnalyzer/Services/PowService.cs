@@ -7,6 +7,9 @@ public readonly record struct PowChallenge(string Seed, long AddonId, int Diffic
 
 public sealed class PowService
 {
+    // Bounded so challenge issuance cannot grow the in-memory table without limit.
+    private const int MaxChallenges = 10_000;
+
     private readonly AnalyzerOptions _options;
     private readonly object _lock = new();
     private readonly Dictionary<string, PowChallenge> _challenges = new();
@@ -22,6 +25,17 @@ public sealed class PowService
         lock (_lock)
         {
             PurgeExpired();
+            if (_challenges.Count >= MaxChallenges)
+            {
+                foreach (var k in _challenges.Values
+                             .OrderBy(c => c.CreatedAt)
+                             .Take(MaxChallenges / 10)
+                             .Select(c => c.Seed)
+                             .ToList())
+                {
+                    _challenges.Remove(k);
+                }
+            }
             _challenges[seed] = challenge;
         }
         return challenge;

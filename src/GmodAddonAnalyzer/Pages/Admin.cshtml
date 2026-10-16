@@ -12,7 +12,7 @@
     {
         <div class="card">
             <h2 class="danger">Locked out</h2>
-            <p>Too many failed attempts. Try again after @Model.LockoutUntil.ToString("u").</p>
+            <p>Too many failed attempts. Try again later.</p>
         </div>
     }
     else
@@ -37,7 +37,7 @@ else
 {
     <p class="muted">Extracted artifacts older than @Model.TtlDays days are removed automatically. You can also remove them manually here.</p>
 
-    <form method="post" asp-page-handler="Sweep" onsubmit="return confirm('Run cleanup sweep now?')">
+    <form method="post" asp-page-handler="Sweep" data-confirm="Run cleanup sweep now?">
         <button class="secondary" type="submit">Run cleanup sweep now</button>
     </form>
 
@@ -69,7 +69,7 @@ else
                     <td>
                         @if (a.ExtractedSizeBytes > 0)
                         {
-                            <form method="post" asp-page-handler="Delete" asp-route-id="@a.WorkshopId" onsubmit="return confirm('Delete extracted artifacts for addon @a.WorkshopId? Metadata will be kept.')">
+                            <form method="post" asp-page-handler="Delete" asp-route-id="@a.WorkshopId" data-confirm="Delete extracted artifacts for addon @a.WorkshopId? Metadata will be kept.">
                                 <button class="secondary danger" type="submit">Delete artifacts</button>
                             </form>
                         }

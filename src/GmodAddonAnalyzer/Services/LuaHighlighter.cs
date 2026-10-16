@@ -12,7 +12,8 @@ public static class LuaHighlighter
         @"|(?<keyword>\b(?:and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while|continue)\b)" +
         @"|(?<name>[A-Za-z_]\w*)" +
         @"|(?<other>.|\n)",
-        RegexOptions.Compiled | RegexOptions.Singleline);
+        RegexOptions.Compiled | RegexOptions.Singleline,
+        TimeSpan.FromSeconds(2));
 
     public static string Highlight(string source)
     {
@@ -33,5 +34,5 @@ public static class LuaHighlighter
     }
 
     private static string Esc(string s) =>
-        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&#34;");
 }

@@ -110,6 +110,7 @@
             return;
         }
         if (r.status === 429) { setStatus("Rate limited. Wait a minute and try again.", "danger"); btn.disabled = false; return; }
+        if (r.status === 503) { setStatus("Server busy — analysis queue is full. Try again in a few minutes.", "danger"); btn.disabled = false; return; }
         if (r.status === 400) { setStatus("Proof rejected. Try again.", "danger"); pendingChallenge = null; ensureChallenge(); return; }
         setStatus("Submission failed (HTTP " + r.status + ").", "danger");
         btn.disabled = false;

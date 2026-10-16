@@ -4,10 +4,10 @@
 
 ### `CleanupService`
 
-- `CleanupAsync(CancellationToken)`:
+- `SweepAsync(CancellationToken)`:
   - For each `Addon` whose `ExtractedSizeBytes > 0` and
     `LastFetchedAt < UtcNow - 5 days`:
-      - `ArtifactStore.DeleteArtifacts(addon)` → rm the
+      - `ArtifactStore.DeleteArtifacts(addon, outDir)` → rm the
         `artifacts/{addonId}/packed` and `artifacts/{addonId}/extracted`
         directories.
       - Set `Addon.PackedSizeBytes = 0`, `Addon.ExtractedSizeBytes = 0`,
@@ -16,8 +16,13 @@
       - Leave `AddonFile` and `LuaAnalysis` rows in place — that's the
         point of permalinks (see 08: a permalink still resolves to
         metadata even after artifacts are gone).
-- `DeleteArtifactsAsync(addonId)` — same as above but for a single addon
-  (used by the Admin page's manual delete).
+  - Close **stale pending runs**: rows stuck in
+    `Pending/Fetching/Extracting/Analyzing` past the fetch timeout (+ slack)
+    are marked `FetchFailed`, so a crash can't leave zombie "in progress" runs.
+  - Trim `AnalysisRuns` older than `Analyzer:RunTtlDays` (default 30) —
+    the runs table used to grow forever, which gave a queue-flooding client a
+    durable storage-DoS vector. `Addon` metadata rows are kept for permalinks.
+- `DeleteArtifactsForAsync(addonId)` — above, single addon (admin manual delete).
 
 ### `CleanupHostedService`
 
@@ -34,13 +39,11 @@ Override via `appsettings.json` or env vars. No UI for it.
 ## B. Manual removal
 
 - `Admin` page lists every `Addon` with artifact presence + age. Each row
-  has a "Delete artifacts" button (`POST /admin/delete/{addonId}`).
-- Confirmation via a plain `confirm()` dialog in JS — no need for a
-  second page. The POST is CSRF-protected (ASP.NET anti-forgery in Razor
-  Pages is on by default).
-- A second "Delete all data" button per row removes the `Addon` and its
-  `AddonFile`/`LuaAnalysis` rows too (cascade in EF model). For the
-  "oops I shouldn't have analyzed this" case.
+  has a "Delete artifacts" button (`POST /admin?handler=Delete&…`).
+- Confirmation via a `confirm()` dialog wired in `site.js` (`data-confirm`),
+  not inline event handlers — the CSP in `Program.cs` forbids inline script
+  (`script-src 'self'`). The POST itself is CSRF-protected (Razor Pages
+  anti-forgery is on by default) and the cookie is SameSite=Strict.
 
 ## C. Anti-spam: hash proof-of-work
 
@@ -67,10 +70,15 @@ Verify(addonId, seed, nonce) -> bool
 ### Difficulty
 
 - Default **16 leading zero bits** (≈ 65k tries average). On a modern
-  browser via a Web Worker that's a fraction of a second; on a
-  botnet/abuser it's a real cost at scale.
-- Configurable via `AnalyzerOptions.PowDifficulty`. We can bump it later
-  if abuse appears; it's just a settings change.
+  browser via a Web Worker that's a fraction of a second; at the compose
+  default of 21 it's a few seconds.
+- Configurable via `AnalyzerOptions.PowDifficulty`; bump if abuse appears.
+- **Honesty note:** PoW is a *speed bump*, not a control. A native client
+  computes SHA-256 at millions per second, so difficulty 21 is trivial for a
+  determined abuser; the per-IP rate limiter (`Program.cs`) is the real
+  deterrent, and `/analyze` additionally caps the queue depth and enforces a
+  per-addon resubmission cooldown (see below), so even a full bypass of PoW
+  cannot saturate the pipeline.
 - Per-addon-id is bound into the hash so a solved challenge can't be
   reused for a different addon.
 
@@ -109,6 +117,19 @@ there's no separate file to serve.
   just stops someone issuing millions of challenges.
 - `POST /analyze` also rate-limited per IP (e.g. 5 / minute). PoW makes
   even this overkill, but cheap to keep.
+
+### Submission controls (added during the security review)
+
+- The pipeline queue is **bounded** (`Analyzer:MaxQueuedAnalyses`, default
+  100); overflow submits get HTTP 503 `{ error: "queue_full" }`.
+- No more than `Analyzer:MaxPendingAnalysisRuns` (100) rows may sit in a
+  non-terminal state — a backstop across restarts.
+- The same addon cannot be re-analyzed within
+  `Analyzer:ResubmitCooldownMinutes` (30): re-submitting a Done/failed run
+  always re-downloaded the whole addon otherwise. The endpoint redirects to
+  the existing run instead.
+- Runs stuck Pending (e.g. lost to a restart) are failed by the cleanup
+  sweeper; `AnalysisRuns` rows are trimmed after `Analyzer:RunTtlDays` (30).
 
 ### Failure modes
 

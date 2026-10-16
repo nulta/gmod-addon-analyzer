@@ -37,12 +37,12 @@ else
                 <td><span class="badge badge-@e.Realm">@e.Realm</span></td>
                 <td>@e.Kind</td>
                 <td><span class="badge badge-@e.RiskLevel">@e.RiskLevel</span></td>
-                <td>@(e.RiskSignals == "[]" ? "" : Html.Raw($"<code>{e.RiskSignals}</code>"))</td>
-                <td>@(e.HooksDeclared == "[]" ? "" : Html.Raw($"<code>{e.HooksDeclared}</code>"))</td>
-                <td>@(e.HooksCalled == "[]" ? "" : Html.Raw($"<code>{e.HooksCalled}</code>"))</td>
-                <td>@(e.TimersCreated == 0 ? "" : e.TimersCreated)</td>
-                <td>@(e.NetMessagesSent == "[]" ? "" : Html.Raw($"<code>{e.NetMessagesSent}</code>"))</td>
-                <td>@(e.NetReceivers == 0 ? "" : e.NetReceivers)</td>
+                <td>@if (e.RiskSignals != "[]") { <code>@e.RiskSignals</code> }</td>
+                <td>@if (e.HooksDeclared != "[]") { <code>@e.HooksDeclared</code> }</td>
+                <td>@if (e.HooksCalled != "[]") { <code>@e.HooksCalled</code> }</td>
+                <td>@if (e.TimersCreated != 0) { @e.TimersCreated }</td>
+                <td>@if (e.NetMessagesSent != "[]") { <code>@e.NetMessagesSent</code> }</td>
+                <td>@if (e.NetReceivers != 0) { @e.NetReceivers }</td>
                 <td>@e.Lines</td>
             </tr>
         }

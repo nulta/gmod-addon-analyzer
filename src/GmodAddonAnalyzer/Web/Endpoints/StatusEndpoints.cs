@@ -10,6 +10,10 @@ namespace GmodAddonAnalyzer.Web.Endpoints;
 
 public static class StatusEndpoints
 {
+    // Serializes the dedupe check + insert so two concurrent /analyze requests
+    // cannot create duplicate runs for the same addon.
+    private static readonly SemaphoreSlim SubmitGate = new(1, 1);
+
     public static void MapStatusEndpoints(this WebApplication app)
     {
         app.MapGet("/pow/challenge", (long addonId, PowService pow, AnalyzerOptions options) =>
@@ -30,34 +34,79 @@ public static class StatusEndpoints
 
             await using var db = await dbFactory.CreateDbContextAsync();
 
-            var existing = await db.AnalysisRuns
-                .Where(r => r.AddonId == req.AddonId && r.Status != AnalysisStatus.Done
-                                                       && r.Status != AnalysisStatus.FetchFailed
-                                                       && r.Status != AnalysisStatus.ExtractFailed)
-                .FirstOrDefaultAsync();
-            if (existing is not null)
-                return Results.Redirect($"/report/{existing.AddonId}?run={existing.Id}");
-
-            var run = new AnalysisRun
+            await SubmitGate.WaitAsync();
+            try
             {
-                AddonId = req.AddonId,
-                SubmittedAt = DateTime.UtcNow,
-                Status = AnalysisStatus.Pending,
-                SubmittedByIp = TruncateIp(ctx.Connection.RemoteIpAddress?.ToString()),
-                PowNonce = req.Nonce,
-            };
-            db.AnalysisRuns.Add(run);
-            await db.SaveChangesAsync();
-            await channel.Writer.WriteAsync(new AnalysisRequest(run.Id, run.AddonId));
-            return Results.Redirect($"/report/{run.AddonId}?run={run.Id}");
+                var existing = await db.AnalysisRuns
+                    .Where(r => r.AddonId == req.AddonId && r.Status != AnalysisStatus.Done
+                                                           && r.Status != AnalysisStatus.FetchFailed
+                                                           && r.Status != AnalysisStatus.ExtractFailed)
+                    .FirstOrDefaultAsync();
+                if (existing is not null)
+                    return Results.Redirect($"/report/{existing.AddonId}?run={existing.Id}");
+
+                // Dedupe only suppresses in-flight runs; without a cooldown,
+                // re-submitting an already-analyzed addon always re-downloads it,
+                // and every submission just queues behind a fully serialized
+                // (one SteamCMD at a time) pipeline.
+                var latest = await db.AnalysisRuns
+                    .Where(r => r.AddonId == req.AddonId)
+                    .OrderByDescending(r => r.SubmittedAt)
+                    .FirstOrDefaultAsync();
+                if (latest is not null
+                    && (DateTime.UtcNow - latest.SubmittedAt).TotalMinutes < options.ResubmitCooldownMinutes)
+                    return Results.Redirect($"/report/{latest.AddonId}?run={latest.Id}");
+
+                // Backstop for the in-memory queue across restarts: reject when
+                // too many rows are already stuck in a non-terminal state.
+                var pending = await db.AnalysisRuns
+                    .CountAsync(r => r.Status == AnalysisStatus.Pending || r.Status == AnalysisStatus.Fetching
+                                  || r.Status == AnalysisStatus.Extracting || r.Status == AnalysisStatus.Analyzing);
+                if (pending >= Math.Max(1, options.MaxPendingAnalysisRuns))
+                    return Results.Json(new { error = "queue_full" },
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+
+                var run = new AnalysisRun
+                {
+                    AddonId = req.AddonId,
+                    SubmittedAt = DateTime.UtcNow,
+                    Status = AnalysisStatus.Pending,
+                    SubmittedByIp = TruncateIp(ctx.Connection.RemoteIpAddress?.ToString()),
+                    PowNonce = req.Nonce,
+                };
+                db.AnalysisRuns.Add(run);
+                await db.SaveChangesAsync();
+
+                // Bounded channel: enqueue must not orphan a Pending row.
+                if (!channel.Writer.TryWrite(new AnalysisRequest(run.Id, run.AddonId)))
+                {
+                    run.Status = AnalysisStatus.FetchFailed;
+                    run.ErrorMessage = "Analysis queue is full; the run was not started. Try again later.";
+                    await db.SaveChangesAsync();
+                    return Results.Json(new { error = "queue_full" },
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                }
+
+                return Results.Redirect($"/report/{run.AddonId}?run={run.Id}");
+            }
+            finally
+            {
+                SubmitGate.Release();
+            }
         }).RequireRateLimiting("analyze");
 
-        app.MapGet("/status/{runId:long}", async (long runId, IDbContextFactory<AnalyzerDbContext> dbFactory) =>
+        app.MapGet("/status/{runId:long}", async (long runId, IDbContextFactory<AnalyzerDbContext> dbFactory,
+            AdminGuardService guard, HttpContext ctx) =>
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             var run = await db.AnalysisRuns.FirstOrDefaultAsync(r => r.Id == runId);
             if (run is null) return Results.NotFound();
-            return Results.Json(new StatusDto(run.Status.ToString(), run.ErrorMessage));
+
+            // Error text can contain server internals (paths, logs); only expose
+            // the detail to the authenticated admin. Everyone else sees the status only.
+            var showDetail = guard.IsConfigured
+                && guard.ValidateToken(ctx.Request.Cookies[AdminGuardService.CookieName]);
+            return Results.Json(new StatusDto(run.Status.ToString(), showDetail ? run.ErrorMessage : null));
         });
 
         app.MapGet("/api/file/{addonId:long}", async (long addonId, string path, IDbContextFactory<AnalyzerDbContext> dbFactory,
@@ -69,7 +118,18 @@ public static class StatusEndpoints
             if (addon is null) return Results.NotFound();
             var file = await db.AddonFiles.FirstOrDefaultAsync(f => f.AddonId == addon.Id && f.RelativePath == path);
             if (file is null) return Results.NotFound();
-            var fullPath = System.IO.Path.Combine(store.ExtractedDir(addonId), path.Replace('/', System.IO.Path.DirectorySeparatorChar));
+
+            string fullPath;
+            try
+            {
+                // The DB lookup already whitelists known paths; this canonical check
+                // is defense in depth against future data issues.
+                fullPath = SafePath.Resolve(store.ExtractedDir(addonId), path);
+            }
+            catch (PathSafetyException)
+            {
+                return Results.BadRequest("bad path");
+            }
             if (!System.IO.File.Exists(fullPath)) return Results.NotFound("artifacts removed");
             var stream = System.IO.File.OpenRead(fullPath);
             var fileName = System.IO.Path.GetFileName(path);
