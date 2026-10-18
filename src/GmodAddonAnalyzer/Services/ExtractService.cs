@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using SharpCompress.Compressors.LZMA;
 
 namespace GmodAddonAnalyzer.Services;
 
@@ -24,15 +25,46 @@ public sealed class ExtractService
         Directory.CreateDirectory(destDir);
         await using var fs = File.OpenRead(archivePath);
 
-        var first = fs.ReadByte();
-        if (first == 0x1f && fs.ReadByte() == 0x8b)
+        // Sniff the container. SteamCMD hands us a plain GMA for modern uploads,
+        // gzip+tar for some old uploads, and an LZMA-alone stream for pre-GMod-13
+        // files (Steam names them <id>_<hash>_legacy.bin and does NOT decompress
+        // them; the payload is an LZMA-wrapped GMA).
+        var head = new byte[13];
+        var headLen = await ReadExactOptAsync(fs, head, 13, ct);
+
+        if (headLen >= 2 && head[0] == 0x1f && head[1] == 0x8b)
         {
             fs.Position = 0;
             await ExtractLegacyAsync(fs, destDir, ct);
             return;
         }
 
-        fs.Position = 0;
+        if (headLen >= 4 && Encoding.ASCII.GetString(head, 0, 4) == "GMAD")
+        {
+            fs.Position = 0;
+            await ExtractGmaAsync(fs, destDir, ct);
+            return;
+        }
+
+        if (headLen == 13 && TryReadLzmaAloneHeader(head, out var lzmaProps, out var plainSize))
+        {
+            if (plainSize >= 0 && plainSize > MaxTotalBytes)
+                throw new ExtractException("LZMA payload declares an uncompressed size over the limit.");
+            fs.Position = 13;
+            // Streaming decode (no full buffering) with the size taken from the
+            // header; downstream GMA/tar caps still bound what gets extracted.
+            await using Stream lzma = LzmaStream.Create(lzmaProps, fs, fs.Length - 13, plainSize, leaveOpen: true);
+            await ExtractGmaAsync(lzma, destDir, ct);
+            return;
+        }
+
+        throw new ExtractException(
+            $"Not a GMA file (magic={Encoding.ASCII.GetString(head, 0, Math.Min(4, headLen))})");
+    }
+
+    /// <summary>Parses a GMA whose stream is positioned right at the "GMAD" magic.</summary>
+    private async Task ExtractGmaAsync(Stream fs, string destDir, CancellationToken ct)
+    {
         var magic = await ReadExactAsync(fs, 4, ct);
         if (Encoding.ASCII.GetString(magic) != "GMAD")
             throw new ExtractException($"Not a GMA file (magic={Encoding.ASCII.GetString(magic)})");
@@ -119,17 +151,46 @@ public sealed class ExtractService
 
     private static async Task<string> ReadNullStringAsync(Stream s, CancellationToken ct)
     {
+        // Async 1-byte reads (not ReadByte) keep every read on the same sync/
+        // async path — some stream wrappers track that and refuse to mix them.
         var bytes = new List<byte>(32);
+        var one = new byte[1];
         while (true)
         {
-            var b = s.ReadByte();
-            if (b < 0) throw new ExtractException("Unexpected end of stream in string.");
-            if (b == 0) break;
+            var n = await s.ReadAsync(one.AsMemory(0, 1), ct);
+            if (n == 0) throw new ExtractException("Unexpected end of stream in string.");
+            if (one[0] == 0) break;
             if (bytes.Count >= MaxNameBytes)
                 throw new ExtractException("Excessively long string in archive header.");
-            bytes.Add((byte)b);
+            bytes.Add(one[0]);
         }
         return Encoding.UTF8.GetString(bytes.ToArray());
+    }
+
+    /// <summary>
+    /// LZMA-alone header sniffing: 1 props byte + 4 dict-size LE bytes + 8
+    /// uncompressed-size LE bytes. Strict enough to avoid misclassifying
+    /// non-LZMA files (e.g. a raw ZIP fails the lc+lp decoder constraint).
+    /// Returns the 5 decoder property bytes and the declared output size
+    /// (-1 when the header uses the unknown-size sentinel).
+    /// </summary>
+    internal static bool TryReadLzmaAloneHeader(ReadOnlySpan<byte> head, out byte[] props, out long plainSize)
+    {
+        props = [];
+        plainSize = 0;
+        var p = head[0];
+        if (p >= 225) return false;                       // lc/lp/pb encoding invalid
+        var lc = p % 9;
+        var lp = (p / 9) % 5;
+        var pb = (p / 9) / 5;
+        if (lc + lp > 4 || pb > 4) return false;          // decoder constraints
+        var dict = BitConverter.ToUInt32(head[1..5]);
+        if (dict is < 4096 or > 0x40000000u) return false; // plausible dictionary size
+        var plain = BitConverter.ToUInt64(head[5..13]);
+        if (plain != ulong.MaxValue && plain == 0) return false;
+        props = [head[0], head[1], head[2], head[3], head[4]];
+        plainSize = plain == ulong.MaxValue ? -1 : unchecked((long)plain);
+        return true;
     }
 
     private async Task ExtractLegacyAsync(Stream input, string destDir, CancellationToken ct)

@@ -92,6 +92,45 @@ public sealed class GmaExtractorTests
         Assert.Contains("Too many", ex.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Extracts_LzmaWrappedLegacyBin()
+    {
+        // Regression: SteamCMD ships pre-GMod-13 workshop files as
+        // *_legacy.bin — an LZMA-alone stream wrapping a GMA. The analyzer used
+        // to fail with "Not a GMA file (magic=]...)" (0x5D = LZMA props byte).
+        // Fixture is the real download of workshop item 111158387.
+        using var dir = new TempDir();
+        var binPath = Path.Combine(dir.Path, "123_legacy.bin");
+        File.Copy(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "111158387_legacy.bin"),
+            binPath);
+
+        var outDir = Path.Combine(dir.Path, "out");
+        await _extract.ExtractAsync(binPath, outDir);
+
+        var lua = Path.Combine(outDir, "lua/weapons/gmod_tool/stools/unbreakable.lua");
+        Assert.True(File.Exists(lua), "expected the addon's lua file to be extracted");
+        Assert.Contains("unbreakable", (await File.ReadAllTextAsync(lua)).ToLowerInvariant(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Extracts_RejectsLzmaSizeBomb()
+    {
+        // Valid-looking LZMA-alone header whose declared uncompressed size
+        // exceeds MaxTotalBytes must be rejected up front.
+        using var dir = new TempDir();
+        var binPath = Path.Combine(dir.Path, "bomb_legacy.bin");
+        File.WriteAllBytes(binPath, new byte[]
+        {
+            0x5D, 0x00, 0x00, 0x00, 0x02,                    // props + 32 MiB dict
+            0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00,  // uncompressed size = 64 GiB > 4 GiB
+        });
+
+        var outDir = Path.Combine(dir.Path, "out");
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => _extract.ExtractAsync(binPath, outDir));
+        Assert.Contains("over the limit", ex.ToString(), StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Builds a gzipped tar with <paramref name="count"/> entries type '1'
     /// (hard link) of size 0 — parsed but never written to disk, so the test
