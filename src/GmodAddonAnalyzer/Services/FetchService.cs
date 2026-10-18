@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Formats.Tar;
 using System.IO.Compression;
 using GmodAddonAnalyzer.Configuration;
 using Microsoft.Extensions.Logging;
@@ -55,6 +56,10 @@ public sealed class FetchService
                 RedirectStandardError = true,
                 WorkingDirectory = _store.SteamCmdRoot,
             };
+            // The root filesystem is read-only in production; SteamCMD writes
+            // logs/symlinks under $HOME/.steam, so point HOME at the writable
+            // data-volume install dir.
+            psi.EnvironmentVariables["HOME"] = _store.SteamCmdRoot;
             psi.ArgumentList.Add("+runscript");
             psi.ArgumentList.Add(scriptPath);
 
@@ -114,21 +119,40 @@ public sealed class FetchService
         if (File.Exists(SteamCmdExePath)) { Volatile.Write(ref _steamCmdReady, 1); return; }
 
         _logger.LogInformation("Installing SteamCMD to {Path}", _store.SteamCmdRoot);
-        var zipUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip";
-        var zipPath = Path.Combine(_store.SteamCmdRoot, "steamcmd.zip");
+        var isWindows = OperatingSystem.IsWindows();
+        // steamcmd.zip is the Windows-only installer (steamcmd.exe); Linux ships
+        // steamcmd.sh inside a tarball. Extracting the zip on Linux leaves no
+        // steamcmd.sh and the executable check below fails.
+        var zipUrl = isWindows
+            ? "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip"
+            : "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
+        var zipPath = Path.Combine(_store.SteamCmdRoot, isWindows ? "steamcmd.zip" : "steamcmd_linux.tar.gz");
         using (var resp = await s_defaultHttp.GetAsync(zipUrl, ct))
         {
             resp.EnsureSuccessStatusCode();
             await using var fs = File.Create(zipPath);
             await resp.Content.CopyToAsync(fs, ct);
         }
-        ZipFile.ExtractToDirectory(zipPath, _store.SteamCmdRoot, overwriteFiles: true);
+        if (isWindows)
+        {
+            ZipFile.ExtractToDirectory(zipPath, _store.SteamCmdRoot, overwriteFiles: true);
+        }
+        else
+        {
+            // .NET 10 removed TarFile.ExtractToTarGzFile; decompress the gz
+            // stream and hand the plain tar stream to TarFile.
+            await using var gz = File.OpenRead(zipPath);
+            using var tar = new GZipStream(gz, CompressionMode.Decompress);
+            TarFile.ExtractToDirectory(tar, _store.SteamCmdRoot, overwriteFiles: true);
+        }
         File.Delete(zipPath);
 
-        if (!OperatingSystem.IsWindows())
+        if (!isWindows)
         {
-            var sh = Path.Combine(_store.SteamCmdRoot, "steamcmd.sh");
-            if (File.Exists(sh)) TryChmod(sh);
+            // TarFile does not restore unix permission bits; the wrapper script
+            // and the 32-bit binary it execs both need the executable bit.
+            TryChmod(Path.Combine(_store.SteamCmdRoot, "steamcmd.sh"));
+            TryChmod(Path.Combine(_store.SteamCmdRoot, "linux32", "steamcmd"));
         }
 
         if (!File.Exists(SteamCmdExePath))

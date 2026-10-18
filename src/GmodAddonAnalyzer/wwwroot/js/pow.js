@@ -75,6 +75,12 @@
         const blob = new Blob([workerSrc], { type: "text/javascript" });
         worker = new Worker(URL.createObjectURL(blob));
         worker.onmessage = (ev) => {
+            // Progress messages ({progress: n}) arrive while solving; only a
+            // message carrying a nonce is the final solution.
+            if (ev.data && typeof ev.data.progress === "number") {
+                setStatus(`Solving proof-of-work… ${ev.data.progress.toLocaleString()} attempts`);
+                return;
+            }
             const { nonce, attempts } = ev.data;
             solving = false;
             setStatus(`Solved in ${attempts} attempts. Submitting…`, "ok");

@@ -9,6 +9,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 COPY --from=build /app/publish ./
 
+# Steam's Linux SteamCMD binary is 32-bit and needs the 32-bit libgcc runtime,
+# which is not in the .NET base image. Without it steamcmd.sh fails with
+# "error while loading shared libraries: libgcc_s.so.1".
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends lib32gcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Run as an unprivileged user. .NET 8+ base images already ship a non-root
 # user/group `app` (APP_UID, home /app); only create uid 1001 on older bases.
 # The app writes only to /app/data (volume, whose named volume inherits this
